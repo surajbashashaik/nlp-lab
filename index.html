@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CineGenre — Movie Genre Predictor</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:#0a0a0c; --panel:#111116; --border:#222230;
+  --gold:#c9a84c; --gold-light:#f0d080; --red:#c0392b;
+  --text:#e8e4d8; --muted:#7a7870; --green:#27ae60;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:999;opacity:.35}
+
+/* ── Filmstrip ── */
+.filmstrip{width:100%;height:28px;background:#000;display:flex;align-items:center;overflow:hidden;border-bottom:2px solid var(--gold); position:relative; z-index: 10;}
+.filmstrip-inner{display:flex;animation:scroll-film 14s linear infinite;white-space:nowrap}
+.filmstrip-hole{width:18px;height:14px;border-radius:3px;background:var(--bg);margin:0 8px;display:inline-block;border:1px solid #333;flex-shrink:0}
+@keyframes scroll-film{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ── Status bar ── */
+#status-bar{
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  padding:10px 24px;
+  background:#0d0d12;border-bottom:1px solid var(--border);
+  font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:2px;
+  transition:all .3s;
+  position:relative; z-index: 10;
+}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot-loading{background:var(--gold);animation:pulse 1s ease-in-out infinite}
+.dot-ready  {background:var(--green)}
+.dot-error  {background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── Header ── */
+header{
+  text-align:center;
+  padding:80px 20px 40px; 
+  position:relative;
+  z-index:10;
+}
+header::after{content:'';display:block;width:120px;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:26px auto 0}
+.logo-label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:6px;color:var(--gold);text-transform:uppercase;margin-bottom:10px}
+h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(52px,9vw,96px);letter-spacing:4px;line-height:.9;text-shadow:0 0 60px rgba(201,168,76,.25)}
+h1 span{color:var(--gold)}
+
+/* Brighter, more visible tagline with a shadow to cut through the light beam */
+.tagline{
+  font-family:'DM Serif Display',serif;
+  font-style:italic;
+  font-size:17px;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+  margin-top:12px;
+  letter-spacing: 0.5px;
+}
+
+/* ── LAMP SYSTEM (Wrapper locks lamp & beam together) ── */
+.lamp-system {
+  position: absolute;
+  top: 50px;   
+  right: 50px; 
+  z-index: 5;
+  pointer-events: none;
+}
+
+.lamp-img {
+  width: 320px; 
+  display: block;
+  position: relative;
+  z-index: 2;
+}
+
+.lamp-beam {
+  position: absolute;
+  /* These are the exact starting coordinates of the beam tip relative to the .lamp-system wrapper */
+  top: 20px;       
+  right: 190px;    
+  width: 1400px;   /* INCREASED width to make the beam cast further */
+  height: 1400px;  /* INCREASED height so the light reaches much further down the screen */
+  /* Brighter, sharper conic gradient */
+  background: conic-gradient(
+    from 215deg at 100% 0%,
+    transparent 0deg,
+    rgba(255, 240, 180, 0.25) 10deg,
+    rgba(255, 250, 210, 0.8) 25deg,  /* Bright hot center */
+    rgba(255, 240, 180, 0.25) 40deg,
+    transparent 50deg
+  );
+  filter: blur(15px); 
+  z-index: 1;
+  transform-origin: 100% 0%; 
+  transform: rotate(5deg); 
+}
+
+/* Soft glowing hotspot centered perfectly behind the CINEAI text */
+
+
+/* ── Layout ── */
+main{max-width:920px;margin:0 auto;padding:0 24px 80px; position: relative; z-index: 10;}
+
+/* ── Panel ── */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:2px;padding:32px;position:relative;margin-bottom:24px}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),transparent 80%)}
+.panel-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:4px;color:var(--gold);text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.panel-label::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── Tabs ── */
+.tabs{display:flex;border:1px solid var(--border);border-radius:2px;overflow:hidden;margin-bottom:22px}
+.tab-btn{flex:1;padding:11px 0;background:transparent;border:none;border-right:1px solid var(--border);color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .2s}
+.tab-btn:last-child{border-right:none}
+.tab-btn.active{background:var(--gold);color:#000;font-weight:600}
+.tab-btn:not(.active):hover{color:var(--text);background:#1a1a22}
+
+/* ── Textarea ── */
+textarea{width:100%;min-height:200px;background:#0d0d12;border:1px solid var(--border);border-radius:2px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:13px;line-height:1.7;padding:16px;resize:vertical;outline:none;transition:border-color .2s}
+textarea:focus{border-color:var(--gold)}
+textarea::placeholder{color:#3a3a4a}
+
+/* ── Drop zone ── */
+.drop-zone{border:2px dashed var(--border);border-radius:2px;padding:48px 24px;text-align:center;cursor:pointer;transition:all .25s;position:relative}
+.drop-zone:hover,.drop-zone.dragover{border-color:var(--gold);background:rgba(201,168,76,.04)}
+.drop-zone input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-icon{font-size:36px;margin-bottom:12px;display:block;opacity:.4}
+.drop-text{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+.drop-subtext{font-size:11px;color:#3a3a4a;margin-top:6px;letter-spacing:1px}
+.file-loaded{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--gold);margin-top:12px}
+
+/* ── Examples ── */
+.examples-row{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.example-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+.example-chip{padding:5px 14px;border:1px solid var(--border);border-radius:20px;background:transparent;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1px;cursor:pointer;transition:all .2s}
+.example-chip:hover{border-color:var(--gold);color:var(--gold)}
+
+/* ── Threshold ── */
+.controls-row{display:flex;align-items:center;gap:20px;margin-top:22px;flex-wrap:wrap}
+.threshold-group{display:flex;align-items:center;gap:12px;flex:1}
+.threshold-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;white-space:nowrap}
+input[type="range"]{flex:1;appearance:none;height:2px;background:var(--border);outline:none;border-radius:2px}
+input[type="range"]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;background:var(--gold);border-radius:50%;cursor:pointer}
+.threshold-val{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--gold);min-width:36px}
+
+/* ── Predict button ── */
+.predict-btn{padding:14px 40px;background:var(--gold);color:#000;border:none;font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:3px;cursor:pointer;border-radius:2px;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:10px;position:relative;overflow:hidden;margin-top:26px;width:100%}
+.predict-btn::before{content:'';position:absolute;inset:0;background:rgba(255,255,255,.1);transform:translateX(-100%);transition:transform .3s}
+.predict-btn:hover::before{transform:translateX(100%)}
+.predict-btn:hover{background:var(--gold-light)}
+.predict-btn:disabled{background:#333;color:#666;cursor:not-allowed}
+.predict-btn:disabled::before{display:none}
+.spinner{width:18px;height:18px;border:2px solid rgba(0,0,0,.2);border-top-color:#000;border-radius:50%;animation:spin .7s linear infinite;display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Results ── */
+.results-section{animation:fadeUp .5s ease forwards}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Genre cards ── */
+.genres-grid{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:4px}
+.genre-card{padding:14px 22px;border:1px solid;border-radius:2px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;animation:popIn .4s cubic-bezier(.34,1.56,.64,1) forwards;opacity:0}
+@keyframes popIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+.genre-card small{font-size:13px;opacity:.7}
+
+.genre-action   {border-color:#e74c3c;color:#e74c3c;background:rgba(231,76,60,.06)}
+.genre-thriller {border-color:#8e44ad;color:#8e44ad;background:rgba(142,68,173,.06)}
+.genre-drama    {border-color:#c9a84c;color:#c9a84c;background:rgba(201,168,76,.06)}
+.genre-comedy   {border-color:#f39c12;color:#f39c12;background:rgba(243,156,18,.06)}
+.genre-horror   {border-color:#c0392b;color:#c0392b;background:rgba(192,57,43,.08)}
+.genre-romance  {border-color:#e91e8c;color:#e91e8c;background:rgba(233,30,140,.06)}
+.genre-scifi    {border-color:#00bcd4;color:#00bcd4;background:rgba(0,188,212,.06)}
+.genre-animation{border-color:#4caf50;color:#4caf50;background:rgba(76,175,80,.06)}
+.genre-crime    {border-color:#ff5722;color:#ff5722;background:rgba(255,87,34,.06)}
+.genre-default  {border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,.06)}
+
+/* ── Confidence bars ── */
+.conf-section{margin-top:24px}
+.conf-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.conf-label{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);width:100px;text-align:right;flex-shrink:0}
+.conf-bar-wrap{flex:1;height:6px;background:#1a1a22;border-radius:3px;overflow:hidden}
+.conf-bar{height:100%;border-radius:3px;transition:width .8s cubic-bezier(.25,1,.5,1)}
+.conf-pct{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--gold);width:40px;flex-shrink:0}
+
+/* ── Stats ── */
+.stat-row{display:flex;gap:16px;margin-top:24px;flex-wrap:wrap}
+.stat-box{flex:1;min-width:110px;background:#0d0d12;border:1px solid var(--border);padding:14px 16px;border-radius:2px;text-align:center}
+.stat-num{font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--gold);letter-spacing:2px;display:block}
+.stat-label{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-top:2px;display:block}
+
+/* ── Metrics panel ── */
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:8px}
+.metric-card{background:#0d0d12;border:1px solid var(--border);padding:14px 16px;border-radius:2px}
+.metric-genre{font-family:'Bebas Neue',sans-serif;font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:8px}
+.metric-row{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:4px}
+.metric-row span:last-child{color:var(--text)}
+
+/* ── Error / no-result ── */
+.error-box{background:rgba(192,57,43,.08);border:1px solid var(--red);border-radius:2px;padding:16px 20px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#e74c3c;display:flex;gap:10px;align-items:flex-start}
+.no-result{font-family:'DM Serif Display',serif;font-style:italic;font-size:18px;color:var(--muted);text-align:center;padding:28px}
+
+/* ── Footer ── */
+footer{border-top:1px solid var(--border);padding:28px 24px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase; position: relative; z-index: 10;}
+footer span{color:var(--gold)}
+
+.hidden{display:none!important}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+/* ===== CURSOR LIGHT ===== */
+.cursor-light {
+  position: fixed;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 999;
+  background: radial-gradient(circle, rgba(255,220,150,0.15), transparent 70%);
+  transform: translate(-50%,-50%);
+}
+/* ── Netflix-Style Cinematic Intro ── */
+#cine-intro {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  animation: introFadeOut 0.6s cubic-bezier(0.7, 0, 0.3, 1) forwards 3.5s;
+}
+
+.intro-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tudum-text {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(80px, 15vw, 160px);
+  letter-spacing: 15px;
+  color: #fff;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  filter: blur(20px);
+  transform: scale(0.8);
+  animation: 
+    netflixReveal 1.2s cubic-bezier(0.215, 0.61, 0.355, 1) forwards 0.5s,
+    netflixZoom 2.5s cubic-bezier(0.5, 0, 0.5, 1) forwards 0.5s;
+}
+
+.tudum-text span {
+  color: var(--gold);
+  text-shadow: 0 0 40px rgba(201,168,76,0.5);
+}
+
+.glow-line {
+  width: 0%;
+  height: 3px;
+  background: var(--gold);
+  box-shadow: 0 0 20px var(--gold), 0 0 40px var(--gold);
+  margin-top: -10px;
+  animation: lineStretch 1.5s cubic-bezier(0.7, 0, 0.3, 1) forwards 1.2s;
+}
+
+/* Animation Keyframes */
+@keyframes netflixReveal {
+  0% { opacity: 0; filter: blur(20px); transform: scale(0.8); }
+  100% { opacity: 1; filter: blur(0); transform: scale(1); }
+}
+
+@keyframes netflixZoom {
+  0% { transform: scale(1); letter-spacing: 15px; }
+  100% { transform: scale(1.3); letter-spacing: 25px; }
+}
+
+@keyframes lineStretch {
+  0% { width: 0%; opacity: 0; }
+  50% { opacity: 1; }
+  100% { width: 120%; opacity: 0; }
+}
+
+@keyframes introFadeOut {
+  0% { opacity: 1; visibility: visible; }
+  100% { opacity: 0; visibility: hidden; }
+}
+
+/* Lock scroll while intro plays */
+body.intro-running {
+  overflow: hidden;
+}
+</style>
+</head>
+<body>
+<div id="cine-intro">
+  <div class="intro-wrapper">
+    <h1 class="tudum-text">CINE<span>AI</span></h1>
+    <div class="glow-line"></div>
+  </div>
+</div>
+<div class="lamp-system">
+  <div class="lamp-beam" id="lamp-light"></div>
+  <img src="src.png" class="lamp-img" id="lamp"/>
+</div>
+
+<div class="glow-hotspot"></div>
+
+<div class="cursor-light" id="cursor-light"></div>
+
+<div class="filmstrip"><div class="filmstrip-inner" id="filmstrip"></div></div>
+
+<div id="status-bar">
+  <div class="status-dot dot-loading" id="status-dot"></div>
+  <span id="status-text">Connecting to backend…</span>
+</div>
+
+<header>
+  <div class="logo-label">NLP Project · Group · Movie Genre Classifier</div>
+  <h1>Cine<span>AI</span></h1>
+  <p class="tagline">Predict movie genres from subtitle text — TF-IDF + Logistic Regression</p>
+</header>
+
+<main>
+  <div class="panel">
+    <div class="panel-label">Input Subtitles</div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="text" onclick="switchTab('text')">✏️ &nbsp;Paste Text</button>
+      <button class="tab-btn" data-tab="file" onclick="switchTab('file')">📁 &nbsp;Upload .srt / .txt</button>
+    </div>
+
+    <div id="tab-text">
+      <textarea id="subtitle-input" placeholder="Paste movie subtitles or dialogue here…
+
+Example:  I will have vengeance, in this life or the next."></textarea>
+      <div class="examples-row">
+        <span class="example-label">Try:</span>
+        <button class="example-chip" onclick="loadExample('action')">⚔️ Action</button>
+        <button class="example-chip" onclick="loadExample('horror')">💀 Horror</button>
+        <button class="example-chip" onclick="loadExample('romance')">💕 Romance</button>
+        <button class="example-chip" onclick="loadExample('scifi')">🚀 Sci-Fi</button>
+        <button class="example-chip" onclick="loadExample('comedy')">😂 Comedy</button>
+        <button class="example-chip" onclick="loadExample('crime')">🔫 Crime</button>
+      </div>
+    </div>
+
+    <div id="tab-file" class="hidden">
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="file-input" accept=".srt,.txt" onchange="handleFileUpload(this)"/>
+        <span class="drop-icon">🎬</span>
+        <div class="drop-text">Drop .srt or .txt file here</div>
+        <div class="drop-subtext">or click to browse</div>
+        <div class="file-loaded hidden" id="file-loaded-msg"></div>
+      </div>
+    </div>
+
+    <div class="controls-row">
+      <div class="threshold-group">
+        <span class="threshold-label">Confidence Threshold</span>
+        <input type="range" min="0.05" max="0.9" step="0.05" value="0.2" id="threshold-slider"
+               oninput="document.getElementById('threshold-val').textContent = parseFloat(this.value).toFixed(2)"/>
+        <span class="threshold-val" id="threshold-val">0.20</span>
+      </div>
+    </div>
+
+    <button class="predict-btn" id="predict-btn" onclick="predict()" disabled>
+      <div class="spinner" id="spinner"></div>
+      <span id="btn-text">⏳ &nbsp;Waiting for Model…</span>
+    </button>
+  </div>
+
+  <div id="results-area"></div>
+
+  <div id="metrics-panel" class="hidden panel">
+    <div class="panel-label">Model Performance Metrics</div>
+    <div id="metrics-content"></div>
+  </div>
+
+</main>
+
+<footer>
+  NLP Project Group &nbsp;·&nbsp; Flask Backend &nbsp;·&nbsp;
+  <span>TF-IDF</span> + <span>OneVsRest Logistic Regression</span> &nbsp;·&nbsp;
+  NLTK · scikit-learn
+</footer>
+
+<script>
+// Start Intro Sequence
+document.body.classList.add('intro-running');
+
+// Cleanup Intro after 4 seconds
+setTimeout(() => {
+    document.body.classList.remove('intro-running');
+    const introElement = document.getElementById('cine-intro');
+    if (introElement) {
+        introElement.style.display = 'none';
+        introElement.remove();
+    }
+}, 4100);
+// ── Filmstrip ────────────────────────────────────────────────
+const fs = document.getElementById('filmstrip');
+const holes = Array(60).fill('<span class="filmstrip-hole"></span>').join('');
+fs.innerHTML = holes + holes;
+
+// ── Tab switch ───────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+  document.getElementById('tab-text').classList.toggle('hidden', tab !== 'text');
+  document.getElementById('tab-file').classList.toggle('hidden', tab !== 'file');
+}
+
+// ── Drag & drop ──────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+});
+
+let fileContent = '', fileIsSRT = false;
+function handleFileUpload(input) { if (input.files[0]) processFile(input.files[0]); }
+function processFile(file) {
+  fileIsSRT = file.name.endsWith('.srt');
+  const reader = new FileReader();
+  reader.onload = e => {
+    fileContent = e.target.result;
+    const msg = document.getElementById('file-loaded-msg');
+    msg.textContent = `✓ Loaded: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+    msg.classList.remove('hidden');
+  };
+  reader.readAsText(file);
+}
+
+// ── Example texts ────────────────────────────────────────────
+const examples = {
+  action:  `Move! Go go go! Fire in the hole! Cover me I'm going in. We need backup now, they've breached the perimeter. Take the shot! We have to stop them before they reach the bridge. Hand me the detonator. This ends now. All units converge on sector seven. Load the guns. We attack at dawn. Get down!`,
+  horror:  `Did you hear that? There's something in the basement. Don't go down there alone. The door just locked by itself. We never should have come here. It's been watching us since we arrived. The lights keep flickering. She hasn't come back from the woods. I found her locket by the old well. Something is terribly wrong. It was standing right behind you.`,
+  romance: `I've never felt this way about anyone before. Every morning I wake up thinking about you. The way you laugh, the way you look at me, I never want this to end. Let's run away together, just the two of us. I booked a table at the place we had our first date. Will you stay? Please stay. I love you more than I know how to say.`,
+  scifi:   `Initiating warp sequence. The alien signal originates from beyond the Andromeda galaxy. The quantum field is destabilising. Captain, the crew cannot survive entry into the nebula. Activate the deflector shields. An anomaly in spacetime has been detected. The AI has achieved consciousness and we cannot shut it down. Prepare the cryosleep chambers.`,
+  comedy:  `Oh come on, you've got to be kidding me! Every single time! Look at this mess. Why do these things only happen to me? I swear I didn't mean to spill the coffee on the boss. And then the car wouldn't start. My hair looked like a bird's nest. Best day ever! Oh wait, it gets worse. Trust me you're going to laugh about this later.`,
+  crime:   `The body was found at 3 AM. We have a witness but she won't talk. The detective traced the money back to the syndicate. Don't let him leave the city. Wipe the security footage. We've been set up. This goes all the way to the commissioner. I want him disappeared by morning. Follow the money. Nobody threatens this family and walks.`
+};
+function loadExample(g) { switchTab('text'); document.getElementById('subtitle-input').value = examples[g]; }
+
+// ── Genre styling ─────────────────────────────────────────────
+function genreClass(g) {
+  g = g.toLowerCase();
+  if (g.includes('action')||g.includes('war')||g.includes('western')) return 'genre-action';
+  if (g.includes('thriller')) return 'genre-thriller';
+  if (g.includes('drama'))    return 'genre-drama';
+  if (g.includes('comedy')||g.includes('family')) return 'genre-comedy';
+  if (g.includes('horror'))   return 'genre-horror';
+  if (g.includes('romance'))  return 'genre-romance';
+  if (g.includes('sci')||g.includes('fantasy')||g.includes('adventure')) return 'genre-scifi';
+  if (g.includes('animation')||g.includes('animated')) return 'genre-animation';
+  if (g.includes('crime'))    return 'genre-crime';
+  return 'genre-default';
+}
+function barColor(g) {
+  g = g.toLowerCase();
+  if (g.includes('action')||g.includes('war')) return '#e74c3c';
+  if (g.includes('thriller')) return '#8e44ad';
+  if (g.includes('drama'))    return '#c9a84c';
+  if (g.includes('comedy'))   return '#f39c12';
+  if (g.includes('horror'))   return '#c0392b';
+  if (g.includes('romance'))  return '#e91e8c';
+  if (g.includes('sci')||g.includes('fantasy')) return '#00bcd4';
+  if (g.includes('animation'))return '#4caf50';
+  if (g.includes('crime'))    return '#ff5722';
+  return '#c9a84c';
+}
+
+// ── Status polling ────────────────────────────────────────────
+let modelReady = false;
+async function pollStatus() {
+  try {
+    const res  = await fetch('/api/status');
+    const data = await res.json();
+    const dot  = document.getElementById('status-dot');
+    const txt  = document.getElementById('status-text');
+    const btn  = document.getElementById('predict-btn');
+    const btnT = document.getElementById('btn-text');
+
+    if (data.status === 'ready') {
+      dot.className  = 'status-dot dot-ready';
+      txt.textContent= 'Model ready  ·  TF-IDF + Logistic Regression';
+      btn.disabled   = false;
+      btnT.textContent = '🎯  Predict Genre';
+      modelReady = true;
+      loadMetrics();
+    } else if (data.status === 'error') {
+      dot.className  = 'status-dot dot-error';
+      txt.textContent= '⚠️  ' + data.message;
+    } else {
+      dot.className  = 'status-dot dot-loading';
+      txt.textContent= data.message || 'Loading…';
+      setTimeout(pollStatus, 3000);
+    }
+  } catch {
+    document.getElementById('status-text').textContent = '⚠️  Cannot reach backend. Is app.py running?';
+    document.getElementById('status-dot').className = 'status-dot dot-error';
+    setTimeout(pollStatus, 5000);
+  }
+}
+
+// ── Load metrics ──────────────────────────────────────────────
+async function loadMetrics() {
+  try {
+    const res  = await fetch('/api/metrics');
+    const data = await res.json();
+    if (data.error) return;
+
+    const panel = document.getElementById('metrics-panel');
+    panel.classList.remove('hidden');
+
+    let html = `
+      <div class="stat-row" style="margin-top:0;margin-bottom:20px">
+        <div class="stat-box">
+          <span class="stat-num">${(data.accuracy*100).toFixed(1)}%</span>
+          <span class="stat-label">Accuracy</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-num">${data.hamming_loss.toFixed(3)}</span>
+          <span class="stat-label">Hamming Loss</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-num">${data.genres.length}</span>
+          <span class="stat-label">Genre Classes</span>
+        </div>
+      </div>
+      <div class="panel-label" style="margin-bottom:14px">Per-Genre F1 Scores</div>
+      <div class="metrics-grid">`;
+
+    for (const [genre, m] of Object.entries(data.per_genre || {})) {
+      html += `<div class="metric-card">
+        <div class="metric-genre">${genre}</div>
+        <div class="metric-row"><span>Precision</span><span>${m.precision}</span></div>
+        <div class="metric-row"><span>Recall</span><span>${m.recall}</span></div>
+        <div class="metric-row"><span>F1</span><span>${m.f1}</span></div>
+      </div>`;
+    }
+    html += '</div>';
+    document.getElementById('metrics-content').innerHTML = html;
+  } catch(e) { console.warn('Metrics fetch failed', e); }
+}
+
+// ── Predict ───────────────────────────────────────────────────
+async function predict() {
+  const activeTab = document.querySelector('.tab-btn.active').dataset.tab;
+  let text = '', isSRT = false;
+
+  if (activeTab === 'text') {
+    text = document.getElementById('subtitle-input').value.trim();
+  } else {
+    text  = fileContent.trim();
+    isSRT = fileIsSRT;
+  }
+
+  if (!text) { showError('Please paste subtitle text or upload a file first.'); return; }
+
+  const threshold = parseFloat(document.getElementById('threshold-slider').value);
+  const btn  = document.getElementById('predict-btn');
+  const spin = document.getElementById('spinner');
+  const btnT = document.getElementById('btn-text');
+
+  btn.disabled       = true;
+  spin.style.display = 'block';
+  btnT.textContent   = 'Predicting…';
+  document.getElementById('results-area').innerHTML = '';
+
+  try {
+    const res  = await fetch('/api/predict', {
+      method:  'POST',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify({ text, threshold, is_srt: isSRT })
+    });
+    const data = await res.json();
+
+    if (data.error) { showError(data.error); return; }
+    renderResults(data, text.split(/\s+/).filter(Boolean).length, threshold);
+
+  } catch (e) {
+    showError('Request failed: ' + e.message + '. Is app.py running on port 5000?');
+  } finally {
+    btn.disabled       = false;
+    spin.style.display = 'none';
+    btnT.textContent   = '🎯  Predict Genre';
+  }
+}
+
+// ── Render results ────────────────────────────────────────────
+function renderResults(data, wordCount, threshold) {
+  const genres = data.genres || [];
+  const top5   = data.top5   || [];
+
+  let html = `<div class="results-section"><div class="panel">
+    <div class="panel-label">Predicted Genres</div>`;
+
+  if (genres.length === 0) {
+    html += `<p class="no-result">No genres detected above ${threshold} threshold.<br>
+      <small style="font-size:13px;color:#555">Try lowering the threshold slider.</small></p>`;
+  } else {
+    html += `<div class="genres-grid">`;
+    genres.forEach((g, i) => {
+      const pct = data.confidence[g] ? (data.confidence[g]*100).toFixed(0) : '—';
+      html += `<div class="genre-card ${genreClass(g)}" style="animation-delay:${i*.07}s">
+        ${g.toUpperCase()} <small>${pct}%</small>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Stats row
+  html += `<div class="stat-row">
+    <div class="stat-box"><span class="stat-num">${genres.length}</span><span class="stat-label">Genres Found</span></div>
+    <div class="stat-box"><span class="stat-num">${data.word_count}</span><span class="stat-label">Words Processed</span></div>
+    <div class="stat-box"><span class="stat-num">${(threshold*100).toFixed(0)}%</span><span class="stat-label">Threshold</span></div>
+    <div class="stat-box"><span class="stat-num">${top5.length}</span><span class="stat-label">Top Candidates</span></div>
+  </div>`;
+
+  // Confidence bars — top 5
+  if (top5.length > 0) {
+    html += `<div class="conf-section">
+      <div class="panel-label" style="margin-bottom:14px;margin-top:24px">Confidence Scores — Top 5</div>`;
+    top5.forEach(([genre, score]) => {
+      const pct  = (score * 100).toFixed(1);
+      const col  = barColor(genre);
+      const isDetected = genres.includes(genre);
+      html += `<div class="conf-row">
+        <div class="conf-label" style="${isDetected?'color:var(--text)':''}">${genre}</div>
+        <div class="conf-bar-wrap">
+          <div class="conf-bar" style="width:${pct}%;background:${col};opacity:${isDetected?1:.4}"></div>
+        </div>
+        <div class="conf-pct">${pct}%</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `</div></div>`;
+  document.getElementById('results-area').innerHTML = html;
+  document.getElementById('results-area').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function showError(msg) {
+  document.getElementById('results-area').innerHTML =
+    `<div class="results-section"><div class="error-box">⚠️ <span>${msg}</span></div></div>`;
+}
+
+// ── Init ──────────────────────────────────────────────────────
+pollStatus();
+
+/* ===== CURSOR LIGHT ===== */
+const cursorLight = document.getElementById('cursor-light');
+document.addEventListener('mousemove', (e) => {
+  cursorLight.style.left = e.clientX + 'px';
+  cursorLight.style.top  = e.clientY + 'px';
+});
+</script>
+
+</body>
+</html>
